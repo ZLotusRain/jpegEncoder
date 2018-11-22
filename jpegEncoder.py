@@ -25,13 +25,22 @@ colorQ = np.array([[17,18,24,47,99,99,99,99],
 #存储结构：底层单位为8*8的np.array，上一层是MCU，即[YYYYCbCr]，再上一层为MCU数
 # 因此存储结构为一个MCU列表，每个表项为[Y,Y,Y,Y,Cb,Cr]这样的形式存储，每个元素是一个8*8的np.array
 
+def RGB2YCbCr(node):
+    R,G,B = node
+    color = [0,0,0]
+    color[0] = round(0.299*R+0.587*G+0.144*B)
+    color[1] = round(0.564*(B-color[0]))
+    color[2] = round(0.713*(R-color[0]))
+
+    return color
+
 #模块1，读取图片，并进行二次采样
 def generateMCU():
-    global mcuList,width,height
+    global mcuList,width,height,originmcuList
     in_file = sys.argv[1]
     im = Image.open(in_file)
-    width,height = im.size
     im = im.convert("YCbCr")
+    width,height = im.size
     x,y = 0,0
     outerWidth,outerHeight = width,height
     if width%16 !=0:
@@ -41,6 +50,7 @@ def generateMCU():
     outerWidth-=1
     outerHeight-=1
     mcuList = [] #用来存放mcu的列表
+    originmcuList = []
     while x<outerWidth and y<outerHeight:
         y00,y01,y10,y11 = np.zeros((8,8),int),np.zeros((8,8),int),np.zeros((8,8),int),np.zeros((8,8),int)
         cb,cr = np.zeros((8,8),int),np.zeros((8,8),int)
@@ -49,6 +59,7 @@ def generateMCU():
                 if i>=width or j>=height:#填充
                     element = (0,0,0)
                 else:
+                    #element = RGB2YCbCr(im.getpixel((i,j)))
                     element = im.getpixel((i,j))
                 inline_x,inline_y = i-x,j-y #内部坐标转换
                 #按照位置写入4个Y中
@@ -69,6 +80,7 @@ def generateMCU():
                     else:
                         cr[inline_y//2,inline_x//2] = element[2]
         mcuList.append([y00,y01,y10,y11,cb,cr])
+        originmcuList.append([y00,y01,y10,y11,cb,cr])
         x+=16
         if x >= outerWidth:
             x = 0
@@ -108,6 +120,27 @@ def implement_quantize():
 generateMCU()
 implementDCT()
 implement_quantize()
+
+#与IDCT后的变量进行对比
+print(originmcuList)
+for mcu in mcuList:
+    for (n,block) in enumerate(mcu):
+        if n<4:
+            mcu[n] = np.multiply(block,lightQ)
+        else:
+            mcu[n] = np.multiply(block,colorQ)
+for mcu in mcuList:
+    for (n,block) in enumerate(mcu):
+        f = np.zeros((8,8))
+        for i in range(8):
+            for j in range(8):
+                sum = 0
+                for u in range(8):
+                    for v in range(8):
+                        sum+=cFunc(u)*cFunc(v)/4*math.cos(math.pi*(2*i+1)*u/16)*math.cos(math.pi*v*(2*j+1)/16)*block[v][u]
+                f[j][i] = round(sum)+128
+        mcu[n] = f
+print(mcuList)
 #模块4，进行DPCM编码的函数
 def encoding_dpcm(value):
     value = int(value)
