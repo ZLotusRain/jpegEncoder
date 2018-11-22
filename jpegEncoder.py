@@ -24,10 +24,10 @@ colorQ = np.array([[17,18,24,47,99,99,99,99],
 
 #存储结构：底层单位为8*8的np.array，上一层是MCU，即[YYYYCbCr]，再上一层为MCU数
 # 因此存储结构为一个MCU列表，每个表项为[Y,Y,Y,Y,Cb,Cr]这样的形式存储，每个元素是一个8*8的np.array
-
+std
 #模块1，读取图片，并进行二次采样
 def generateMCU():
-    global mcuList
+    global mcuList,width,height
     in_file = sys.argv[1]
     im = Image.open(in_file)
     width,height = im.size
@@ -74,8 +74,6 @@ def generateMCU():
             x = 0
             y += 16
 
-generateMCU()
-
 #模块2， 进行DCT变化
 cFunc = lambda x: math.sqrt(2)/2 if x==0 else 1
 def implementDCT():
@@ -92,8 +90,6 @@ def implementDCT():
                     f[v][u] = round(sum *cFunc(u)*cFunc(v)/4)
             mcu[n] = f
 
-implementDCT()
-
 #模块3，进行量化
 def implement_quantize():
     global mcuList
@@ -109,7 +105,8 @@ def implement_quantize():
                 for i in range(8):
                     for j in range(8):
                         mcu[n][i][j] = round(mcu[n][i][j])
-
+generateMCU()
+implementDCT()
 implement_quantize()
 #模块4，进行DPCM编码的函数
 def encoding_dpcm(value):
@@ -291,84 +288,45 @@ def writeDQT():
             dqt_stream += int2Bit(colorQ[i][j],8)
     return dqt_stream
 
-#DC产生哈夫曼表的函数，接受一个哈夫曼树，返回0/1字符串流
-def DC_DHT_writer(huffmantree,id):
-    # 生成流
-    outputHuffman = huffmantree.outputHuffman
-    reverseList = huffmantree.reverseHuffman
-
-    flow = ''
-    #冒泡排序得到正常的outputHuffman
-    output_len = len(outputHuffman)
-    for i in range(output_len):
-        for j in range(output_len-i-1):
-            if(len(outputHuffman[j])>len(outputHuffman[j+1])):
-                outputHuffman[j],outputHuffman[j+1] = outputHuffman[j+1],outputHuffman[j]
-            elif(len(outputHuffman[j])==len(outputHuffman[j+1]) and outputHuffman[j]>outputHuffman[j+1]):
-                outputHuffman[j],outputHuffman[j+1] = outputHuffman[j+1],outputHuffman[j]
-    #对各个长度进行统计
-    countDict = {}
-    totalLength = 0
-    for i in range(16):
-        countDict[i] = 0
-    for huff in outputHuffman:
-        countDict[len(huff)-1] +=1 #长度减1表示，第一个8位编号为0，存放长度为1，
-        totalLength +=1
-
-    totalLength += 2+1+16 #2字节的长度，1字节的表ID和表类型，16字节的不同码字数量
-    #write head
-    flow += Hex2Bit('FFC4')
-    flow += int2Bit(totalLength,16)
-    flow += Hex2Bit(id)#DC亮度表
-    for k,v in countDict.items():
-        flow += int2Bit(v,8)
-    
-    #DC的哈夫曼表是对DPCM的size进行编码，得到的key是int
-    for huffmanStr in outputHuffman:
-        huffmanValue = reverseList[huffmanStr]
-        flow += int2Bit(huffmanValue,8)
-    return flow
-
+def DHTWriter():
+    bitStream = ''
+    #DC亮度表
+    return bitStream
 #AC，同上
-def AC_DHT_writer(huffmantree,id):
+def DHT_writer(id):
     # 生成流
-    outputHuffman = huffmantree.outputHuffman
-    reverseList = huffmantree.reverseHuffman
-
     flow = ''
-    #冒泡排序得到正常的outputHuffman
-    output_len = len(outputHuffman)
-    for i in range(output_len):
-        for j in range(output_len-i-1):
-            if(len(outputHuffman[j])>len(outputHuffman[j+1])):
-                outputHuffman[j],outputHuffman[j+1] = outputHuffman[j+1],outputHuffman[j]
-            elif(len(outputHuffman[j])==len(outputHuffman[j+1]) and outputHuffman[j]>outputHuffman[j+1]):
-                outputHuffman[j],outputHuffman[j+1] = outputHuffman[j+1],outputHuffman[j]
-
     #对各个长度进行统计
     countDict = {}
     totalLength = 0
     for i in range(16):
         countDict[i] = 0
-    for huff in outputHuffman:
-        countDict[len(huff)-1] +=1
-        totalLength +=1
+    if id == '00':
+        huffDict = H.get_dc_lu_dict()
+    elif id == '01':
+        huffDict = H.get_dc_co_dict()
+    elif id == '10':
+        huffDict = H.get_ac_lu_dict()
+    else:
+        huffDict = H.get_ac_co_dict()
+    
+    for k,v in huffDict.items():
+        countDict[k-1] = len(v)
+        totalLength += len(v)
 
     totalLength += 2+1+16 #2字节的长度，1字节的表ID和表类型，16字节的不同码字数量
 
     #write head
     flow += Hex2Bit('FFC4')
     flow += int2Bit(totalLength,16)
-    flow += Hex2Bit(id)#AC表
+    flow += Hex2Bit(id)#表id
     for k,v in countDict.items():
         flow += int2Bit(v,8)
     
-    #AC的哈夫曼表是对symbol1进行编码，得到的key是8位的0/1字符串
-    for huffmanStr in outputHuffman:
-        huffmanValue = reverseList[huffmanStr]
-        if huffmanValue == 0:
-            huffmanValue = '00000000'
-        flow += huffmanValue
+    #拿到所有的值
+    for huffman_list in huffDict.values():
+        for element in huffman_list:
+            flow += Hex2Bit(element)
     return flow
 
 
@@ -377,13 +335,13 @@ def writeDHT():
     dht_stream = ''
     #4个哈夫曼表
     # 第一个，DC亮度表
-    dht_stream += DC_DHT_writer(huffman_dc_lu,'00')
+    dht_stream += DHT_writer('00')
     # 第二个，DC颜色表
-    dht_stream += DC_DHT_writer(huffman_dc_co,'01')
+    dht_stream += DHT_writer('01')
     # 第三个，AC亮度表
-    dht_stream += AC_DHT_writer(huffman_ac_lu,'10')
+    dht_stream += DHT_writer('10')
     # 第四个，AC颜色表
-    dht_stream += AC_DHT_writer(huffman_ac_co,'11')
+    dht_stream += DHT_writer('11')
     return dht_stream
 
 #返回二进制位流
@@ -473,3 +431,8 @@ def originBin2Hex(bStr):
         result += cache
         point += 8
     return result
+
+
+bitStream = write_file(dcCodingList,acCodingList)
+with open('test2.jpg','wb') as f:
+    length = f.write(originBin2Hex(bitStream))
