@@ -120,27 +120,62 @@ def implement_quantize():
 generateMCU()
 implementDCT()
 implement_quantize()
+print("After quantize")
 
 #与IDCT后的变量进行对比
-print(originmcuList)
-for mcu in mcuList:
-    for (n,block) in enumerate(mcu):
-        if n<4:
-            mcu[n] = np.multiply(block,lightQ)
-        else:
-            mcu[n] = np.multiply(block,colorQ)
-for mcu in mcuList:
-    for (n,block) in enumerate(mcu):
-        f = np.zeros((8,8))
-        for i in range(8):
-            for j in range(8):
-                sum = 0
-                for u in range(8):
-                    for v in range(8):
-                        sum+=cFunc(u)*cFunc(v)/4*math.cos(math.pi*(2*i+1)*u/16)*math.cos(math.pi*v*(2*j+1)/16)*block[v][u]
-                f[j][i] = round(sum)+128
-        mcu[n] = f
-print(mcuList)
+def after_compare():
+    
+    for mcu in mcuList:
+        for (n,block) in enumerate(mcu):
+            if n<4:
+                mcu[n] = np.multiply(block,lightQ)
+            else:
+                mcu[n] = np.multiply(block,colorQ)
+    for mcu in mcuList:
+        for (n,block) in enumerate(mcu):
+            f = np.zeros((8,8))
+            for i in range(8):
+                for j in range(8):
+                    sum = 0
+                    for u in range(8):
+                        for v in range(8):
+                            sum+=cFunc(u)*cFunc(v)/4*math.cos(math.pi*(2*i+1)*u/16)*math.cos(math.pi*v*(2*j+1)/16)*block[v][u]
+                    f[j][i] = round(sum)+128
+            mcu[n] = f
+    sum = 0
+    for (k,mcu) in enumerate(mcuList):
+        for (n,block) in enumerate(mcu):
+            for i in range(8):
+                for j in range(8):
+                    sum += abs(block[j][i]-originmcuList[k][n][j][i])
+    print(sum/(width*height))
+    im = Image.open("test.jpg")
+    im = im.convert("YCbCr")
+    x,y = 0,0
+    for mcu in mcuList:
+        for i in range(x,x+16):
+            for j in range(y,y+16):
+                if i>=width or j>=height:
+                    continue
+                inline_x,inline_y = i-x,j-y
+                if i>=x+8 and j>= y+8:
+                    Y = mcu[3][inline_y-8][inline_x-8]
+                elif i<x+8 and j>= y+8:
+                    Y = mcu[2][inline_y-8][inline_x]
+                elif i>=x+8 and j<y+8:
+                    Y = mcu[1][inline_y][inline_x-8]
+                else:
+                    Y = mcu[0][inline_y][inline_x]
+                Y = int(Y)
+                Cb = int(mcu[4][inline_y//2][inline_x//2])
+                Cr = int(mcu[5][inline_y//2][inline_x//2])
+                im.putpixel((i,j),(Y,Cb,Cr))
+        x+=16
+        if x>=width:
+            x = 0
+            y+= 16
+    im = im.convert("RGB")
+    im.save("result.jpg")
 #模块4，进行DPCM编码的函数
 def encoding_dpcm(value):
     value = int(value)
@@ -465,7 +500,9 @@ def originBin2Hex(bStr):
         point += 8
     return result
 
-
+print("Ready to output")
 bitStream = write_file(dcCodingList,acCodingList)
 with open('test2.jpg','wb') as f:
     length = f.write(originBin2Hex(bitStream))
+
+after_compare()
