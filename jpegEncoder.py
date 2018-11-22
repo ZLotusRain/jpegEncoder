@@ -22,80 +22,95 @@ colorQ = np.array([[17,18,24,47,99,99,99,99],
 [99,99,99,99,99,99,99,99],
 [99,99,99,99,99,99,99,99]])
 
-width,height = 0,0
-
 #存储结构：底层单位为8*8的np.array，上一层是MCU，即[YYYYCbCr]，再上一层为MCU数
 # 因此存储结构为一个MCU列表，每个表项为[Y,Y,Y,Y,Cb,Cr]这样的形式存储，每个元素是一个8*8的np.array
-in_file = sys.argv[1]
 
 #模块1，读取图片，并进行二次采样
-im = Image.open(in_file)
-width,height = im.size
-im = im.convert("YCbCr")
-x,y = 0,0
-outerWidth,outerHeight = width+16-width%16,height+16-height%16
-mcuList = [] #用来存放mcu的列表
-while x<outerWidth and y<outerHeight:
-    y00,y01,y10,y11 = np.array((8,8)),np.array((8,8)),np.array((8,8)),np.array((8,8))
-    cb,cr = np.array((8,8)),np.array((8,8))
-    for i in range(x,x+16):
-        for j in range(y,y+16):
-            if x>width or y>height:#填充
-                element = 0
-            else:
-                element = im.getpixel((i,j))
-            inline_x,inline_y = i-x,j-y #内部坐标转换
-            #按照位置写入4个Y中
-            if inline_x<8:
-                if inline_y<8:
-                    y00[inline_y,inline_x] = element[0]
+def generateMCU():
+    global mcuList
+    in_file = sys.argv[1]
+    im = Image.open(in_file)
+    width,height = im.size
+    im = im.convert("YCbCr")
+    x,y = 0,0
+    outerWidth,outerHeight = width,height
+    if width%16 !=0:
+        outerWidth = outerWidth + 16 - outerWidth%16
+    if height%16!=0:
+        outerHeight = outerHeight + 16 - outerHeight%16
+    outerWidth-=1
+    outerHeight-=1
+    mcuList = [] #用来存放mcu的列表
+    while x<outerWidth and y<outerHeight:
+        y00,y01,y10,y11 = np.zeros((8,8),int),np.zeros((8,8),int),np.zeros((8,8),int),np.zeros((8,8),int)
+        cb,cr = np.zeros((8,8),int),np.zeros((8,8),int)
+        for i in range(x,x+16):
+            for j in range(y,y+16):
+                if i>=width or j>=height:#填充
+                    element = (0,0,0)
                 else:
-                    y10[inline_y-8,inline_x] = element[0]
-            else:
-                if inline_y<8:
-                    y01[inline_y,inline_x-8] = element[0]
+                    element = im.getpixel((i,j))
+                inline_x,inline_y = i-x,j-y #内部坐标转换
+                #按照位置写入4个Y中
+                if inline_x<8:
+                    if inline_y<8:
+                        y00[inline_y,inline_x] = element[0]
+                    else:
+                        y10[inline_y-8,inline_x] = element[0]
                 else:
-                    y11[inline_y-8,inline_x-8] = element[0]
-            #检查当前元素是否能够写入Cb或Cr
-            if inline_x % 2 == 0:
-                if inline_y % 2 == 0:
-                    cb[inline_y//2,inline_x//2] = element[1]
-                else:
-                    cr[inline_y//2,inline_x//2] = element[2]
-    mcuList.append([y00,y01,y10,y11,cb,cr])
-    x+=16
-    if x >= outerWidth:
-        x = 0
-        y += 16
+                    if inline_y<8:
+                        y01[inline_y,inline_x-8] = element[0]
+                    else:
+                        y11[inline_y-8,inline_x-8] = element[0]
+                #检查当前元素是否能够写入Cb或Cr
+                if inline_x % 2 == 0:
+                    if inline_y % 2 == 0:
+                        cb[inline_y//2,inline_x//2] = element[1]
+                    else:
+                        cr[inline_y//2,inline_x//2] = element[2]
+        mcuList.append([y00,y01,y10,y11,cb,cr])
+        x+=16
+        if x >= outerWidth:
+            x = 0
+            y += 16
+
+generateMCU()
 
 #模块2， 进行DCT变化
 cFunc = lambda x: math.sqrt(2)/2 if x==0 else 1
-for mcu in mcuList:
-    for (n,block) in enumerate(mcu):
-        f = np.zeros((8,8))
-        for u in range(8):
-            for v in range(8):
-                sum = 0
-                for i in range(8):
-                    for j in range(8):
-                        sum+=math.cos(math.pi*(2*i+1)*u/16)*math.cos(math.pi*v*(2*j+1)/16)*(block[j][i]-128)
-                f[v][u] = round(sum *cFunc(u)*cFunc(v)/4)
-        mcu[n] = f
+def implementDCT():
+    global mcuList
+    for mcu in mcuList:
+        for (n,block) in enumerate(mcu):
+            f = np.zeros((8,8))
+            for u in range(8):
+                for v in range(8):
+                    sum = 0
+                    for i in range(8):
+                        for j in range(8):
+                            sum+=math.cos(math.pi*(2*i+1)*u/16)*math.cos(math.pi*v*(2*j+1)/16)*(block[j][i]-128)
+                    f[v][u] = round(sum *cFunc(u)*cFunc(v)/4)
+            mcu[n] = f
+
+implementDCT()
 
 #模块3，进行量化
-for mcu in mcuList:
-    for (n,block) in enumerate(mcu):
-        if n<4:
-            mcu[n] = np.divide(block,lightQ)
-            for i in range(8):
-                for j in range(8):
-                    mcu[n][i][j] = round(mcu[n][i][j])
-        else:
-            mcu[n] = np.divide(block,colorQ)
-            for i in range(8):
-                for j in range(8):
-                    mcu[n][i][j] = round(mcu[n][i][j])
+def implement_quantize():
+    global mcuList
+    for mcu in mcuList:
+        for (n,block) in enumerate(mcu):
+            if n<4:
+                mcu[n] = np.divide(block,lightQ)
+                for i in range(8):
+                    for j in range(8):
+                        mcu[n][i][j] = round(mcu[n][i][j])
+            else:
+                mcu[n] = np.divide(block,colorQ)
+                for i in range(8):
+                    for j in range(8):
+                        mcu[n][i][j] = round(mcu[n][i][j])
 
+implement_quantize()
 #模块4，进行DPCM编码的函数
 def encoding_dpcm(value):
     value = int(value)
@@ -220,7 +235,6 @@ for mcu in mcuList:
         rlc = ac_getRLC(block)
         mcuAcList.append(rlc)
     acCodingList.append(mcuAcList)
-
 # 模块10，对RLC的runlength进行游长编码
 for acMcu in acCodingList:
     for (m,acRLC) in enumerate(acMcu):
