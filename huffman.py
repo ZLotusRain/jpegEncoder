@@ -89,9 +89,7 @@ def Hex2Bit(heximal):
     return bit
 
 def getStd(std_dict):
-    outputHuffman = []
     huffman = {}
-    reverseHuffman = {}
     baseline = 0
     for (length,huffman_list) in std_dict.items():
         for hexNum in huffman_list:
@@ -99,13 +97,11 @@ def getStd(std_dict):
             huffmanStr = bin(baseline)[2:].zfill(length)
             #填充
             key = Hex2Bit(hexNum)
-            outputHuffman.append(huffmanStr)
             huffman[key] = huffmanStr
-            reverseHuffman[huffmanStr] = key
             #进入下一个
             baseline += 1
         baseline <<=1
-    return (outputHuffman,huffman,reverseHuffman)
+    return huffman
 
 def std_DC_LU():
     std_dc_lu = {}

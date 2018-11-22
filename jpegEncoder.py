@@ -24,7 +24,7 @@ colorQ = np.array([[17,18,24,47,99,99,99,99],
 
 #存储结构：底层单位为8*8的np.array，上一层是MCU，即[YYYYCbCr]，再上一层为MCU数
 # 因此存储结构为一个MCU列表，每个表项为[Y,Y,Y,Y,Cb,Cr]这样的形式存储，每个元素是一个8*8的np.array
-std
+
 #模块1，读取图片，并进行二次采样
 def generateMCU():
     global mcuList,width,height
@@ -374,16 +374,16 @@ def write_file(dcCodingList,acCodingList):
             acValue = acmcu[blockID]
             #DC编码
             if blockID<4:
-                dc_dict = huffman_dc_lu.huffman
+                dc_dict = H.std_DC_LU()
             else:
-                dc_dict = huffman_dc_co.huffman
-            codedStream += dc_dict[dcValue[0]]+dcValue[1]
+                dc_dict = H.std_DC_CO()
+            codedStream += dc_dict[bin(dcValue[0])[2:].zfill(8)]+dcValue[1]
 
             #AC编码
             if blockID<4:
-                ac_dict = huffman_ac_lu.huffman
+                ac_dict = H.std_AC_LU()
             else:
-                ac_dict = huffman_ac_co.huffman
+                ac_dict = H.std_AC_CO()
             
             for (sym1,sym2) in acValue:
                 codedStream += ac_dict[sym1]+sym2
