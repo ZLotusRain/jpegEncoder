@@ -90,8 +90,9 @@ def generateMCU():
 cFunc = lambda x: math.sqrt(2)/2 if x==0 else 1
 def implementDCT():
     global mcuList
-    for mcu in mcuList:
+    for (m,mcu) in enumerate(mcuList):
         for (n,block) in enumerate(mcu):
+            print(m,n)
             f = np.zeros((8,8))
             for u in range(8):
                 for v in range(8):
@@ -124,7 +125,6 @@ print("After quantize")
 
 #与IDCT后的变量进行对比
 def after_compare():
-    
     for mcu in mcuList:
         for (n,block) in enumerate(mcu):
             if n<4:
@@ -188,13 +188,23 @@ def encoding_dpcm(value):
         return (len(oppose),oppose)
 
 # 模块5，按照MCU顺序提取DC分量并插入到列表中
+# 注：DPCM编码是对每个颜色空间分别进行的，也就是说三个颜色空间的DIFF计算是分开的。
 dcCodingList = []
-baseline = 0
+baselineY = 0
+baselineCb = 0
+baselineCr = 0
 for mcu in mcuList:
     mcuDcList = []
-    for block in mcu:
-        mcuDcList.append(block[0][0]-baseline)
-        baseline = block[0][0]
+    for (n,block) in enumerate(mcu):
+        if n<4:
+            mcuDcList.append(block[0][0]-baselineY)
+            baselineY = block[0][0]
+        elif n==4:
+            mcuDcList.append(block[0][0]-baselineCb)
+            baselineCb = block[0][0]
+        else:
+            mcuDcList.append(block[0][0]-baselineCr)
+            baselineCr = block[0][0]
     dcCodingList.append(mcuDcList)
 
 # 模块6，对DC分量进行DPCM编码
@@ -434,9 +444,11 @@ def write_file(dcCodingList,acCodingList):
     # write SOS
     bitstream += Hex2Bit('FFDA')
     bitstream += Hex2Bit('000C03010002110311003F00')
+    print("Ready to run code")
     # write data
     codedStream = ''
     for (mcuID,dcmcu) in enumerate(dcCodingList):
+        print(mcuID)
         acmcu = acCodingList[mcuID]
         for (blockID,dcValue) in enumerate(dcmcu):
             acValue = acmcu[blockID]
@@ -457,7 +469,7 @@ def write_file(dcCodingList,acCodingList):
                 codedStream += ac_dict[sym1]+sym2
     while len(codedStream) % 8 != 0: #压缩数据末尾补0
         codedStream += '0'
-    
+
     # 对于FF插入00
     point = 0
     while point<len(codedStream):
@@ -469,7 +481,10 @@ def write_file(dcCodingList,acCodingList):
                 codedStream+='00000000'
         point+=8
 
+    print("压缩率计算")
     bitstream+=codedStream+Hex2Bit('FFD9')
+    print(len(codedStream)/(width*height*3))
+    print(len(bitstream)/(width*height*3))
     return bitstream
 
 # 模块13 导出文件用
@@ -502,6 +517,7 @@ def originBin2Hex(bStr):
 
 print("Ready to output")
 bitStream = write_file(dcCodingList,acCodingList)
+print("bitStream write out already")
 with open('test2.jpg','wb') as f:
     length = f.write(originBin2Hex(bitStream))
 
